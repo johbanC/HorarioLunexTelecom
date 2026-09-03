@@ -41,6 +41,13 @@ se crean equipos nuevos y se ve/regenera el enlace de cada uno.
 Turnos que cruzan medianoche se manejan sumando 24 h. Cada turno lleva
 `cobro` = `anticipado` | `posterior`, resumido en las estadísticas.
 
+**Varios turnos por persona el mismo día** (cuando alguien cubre horas): en
+la cuadrícula, cada empleado tiene un botón **＋ turno** que abre un turno nuevo
+para esa persona ese día, con la entrada ya puesta al final de su último turno.
+Cada turno calcula su descanso por separado. Si dos turnos de la misma persona
+se cruzan en horario, el editor avisa («⚠ se contará doble en las horas») pero
+no lo bloquea.
+
 ## Enlace de solo lectura para el equipo
 
 Cada equipo tiene un `share_token`. El enlace que se comparte es:

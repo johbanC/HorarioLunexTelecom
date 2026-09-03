@@ -276,3 +276,11 @@
 .team-rule-fields{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin:8px 0; background:var(--surface-2); }
 .hint{ font-size:11px; color:var(--muted); margin-top:4px; }
 
+
+/* ---- botón "＋ turno" en la fila del empleado ---- */
+.add-more{
+  border:1px solid var(--border); background:var(--surface-2); color:var(--muted);
+  border-radius:6px; padding:1px 6px; font-size:10.5px; cursor:pointer; margin-left:6px;
+  font-family:'Work Sans',sans-serif; vertical-align:1px;
+}
+.add-more:hover{ color:var(--accent); border-color:var(--accent); }

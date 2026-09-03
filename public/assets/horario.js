@@ -444,7 +444,9 @@
         if (i === 0) body += dateCell;
         body += '<td class="emp-col"' + editAttr + ' data-date="' + dk + '" data-emp="' + r.emp.id + '" data-idx="' + r.idx + '" style="border-left:4px solid ' + cobroColor + ';">' +
           '<div class="emp-name">' + escapeHtml(r.emp.name) + '</div>' +
-          '<div class="emp-time mono">' + esc(r.shift.start) + '–' + esc(r.shift.end) + '</div>' +
+          '<div class="emp-time mono">' + esc(r.shift.start) + '–' + esc(r.shift.end) +
+          (EDITABLE ? ' <button class="add-more" data-add-emp="' + r.emp.id + '" data-add-date="' + dk + '" title="Agregar otro turno a ' + escapeHtml(r.emp.name) + ' ese día">＋ turno</button>' : '') +
+          '</div>' +
           '</td>';
         var sMin = timeToMin(r.shift.start);
         var totalMin = grossMinutes(r.shift.start, r.shift.end);
@@ -499,6 +501,12 @@
         openShiftEditor(tr.getAttribute("data-new-date"), null, -1);
       });
     });
+    table.querySelectorAll("[data-add-emp]").forEach(function (btn) {
+      btn.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        openShiftEditor(btn.getAttribute("data-add-date"), btn.getAttribute("data-add-emp"), -1);
+      });
+    });
   }
 
   // ---------------- editor de turno ----------------
@@ -519,6 +527,15 @@
       s = src ? Object.assign({}, src) : { start: "08:00", end: "17:00", cobro: "anticipado" };
     } else {
       s = { start: "08:00", end: "17:00", cobro: "anticipado" };
+      // Turno adicional ("está cubriendo horas"): arranca donde terminó el último
+      // turno de esa persona ese día.
+      var mine = (empId && state.monthData.days[dateK] && state.monthData.days[dateK][empId]) || [];
+      if (mine.length) {
+        var lastEnd = mine.reduce(function (a, x) { return timeToMin(x.end) > timeToMin(a) ? x.end : a; }, mine[0].end);
+        s.start = lastEnd;
+        s.end = minToTime(timeToMin(lastEnd) + 180);
+        s.cobro = mine[mine.length - 1].cobro || "anticipado";
+      }
     }
     if (!s.breakMode) s.breakMode = "auto";
 
@@ -567,6 +584,21 @@
         : '<div class="brk-label" style="margin-top:6px;">Sin descanso (turno corto)</div>';
     }
 
+    function overlapNote() {
+      var mine = (state.monthData.days[dateK] && state.monthData.days[dateK][selectedEmp]) || [];
+      var aS = timeToMin(s.start), aE = timeToMin(s.end);
+      if (aE <= aS) aE += 1440;
+      var hit = mine.filter(function (x, i) {
+        if (!isNew && selectedEmp === empId && i === shiftIdx) return false; // el mismo turno que se edita
+        var bS = timeToMin(x.start), bE = timeToMin(x.end);
+        if (bE <= bS) bE += 1440;
+        return aS < bE && bS < aE;
+      });
+      if (!hit.length) return '';
+      return '<div class="brk-label" style="margin-top:6px;color:var(--warn);">⚠ Se cruza con otro turno de esta persona: ' +
+        hit.map(function (x) { return x.start + '–' + x.end; }).join(', ') + '. Se contará doble en las horas.</div>';
+    }
+
     function repeatBlock() {
       var boxes = WEEK_PICK.map(function (w) {
         var pre = (w.d >= 1 && w.d <= 5);
@@ -602,6 +634,7 @@
         breakBlock() +
         timelineHtml(s, true) +
         brkLabelHtml() +
+        overlapNote() +
         '<div class="cobro-toggle" style="margin-top:12px;">' +
         '<button type="button" class="' + (s.cobro !== "posterior" ? "active anticipado" : "") + '" data-cobro="anticipado">Cobro anticipado</button>' +
         '<button type="button" class="' + (s.cobro === "posterior" ? "active posterior" : "") + '" data-cobro="posterior">Cobro posterior</button>' +
