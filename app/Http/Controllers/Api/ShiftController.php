@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\Shift;
+use App\Support\ShiftRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -93,90 +94,32 @@ class ShiftController extends Controller
 
         $data = $request->validate($rules);
 
-        // El almuerzo (si se indicó) debe caber completo dentro del turno.
         $team = Employee::find($data['employee_id'])?->team;
-        if ($team && $team->rule === 'lunch' && ! empty($data['lunch_start'])) {
-            $total = $this->grossMinutes($data['start_time'], $data['end_time']);
-            $offset = $this->grossMinutes($data['start_time'], $data['lunch_start']);
-            if ($offset <= 0 || $offset + $team->lunch_min > $total) {
-                abort(response()->json([
-                    'error' => 'El almuerzo no cabe dentro del turno (revisa la hora de inicio del almuerzo).',
-                ], 422));
-            }
+        if ($team && $team->rule === 'lunch' && ! empty($data['lunch_start'])
+            && ! ShiftRules::lunchFits($team, $data['start_time'], $data['end_time'], $data['lunch_start'])) {
+            abort(response()->json([
+                'error' => 'El almuerzo no cabe dentro del turno (revisa la hora de inicio del almuerzo).',
+            ], 422));
         }
 
         return $data;
     }
 
-    /**
-     * Aplica las reglas del EQUIPO del empleado antes de guardar:
-     *  - regla 'interval' (CSR): break_min = 15 min por cada 3 h completas
-     *    (nunca al final); lunch_start = null.
-     *  - regla 'lunch' (Contabilidad): break_min = lunch_min del equipo si se
-     *    indicó lunch_start, si no 0; break_mode = 'manual'.
-     */
+    /** Aplica las reglas del equipo del empleado antes de guardar. */
     private function normalize(array $data): array
     {
         $team = Employee::find($data['employee_id'])?->team;
-        $rule = $team->rule ?? 'interval';
-
-        $cobro = ($data['cobro'] ?? 'anticipado') === 'posterior' ? 'posterior' : 'anticipado';
-
-        if ($rule === 'lunch') {
-            $lunchStart = $data['lunch_start'] ?? null;
-            $breakMin = $lunchStart ? (int) ($team->lunch_min ?? 60) : 0;
-            $breakMode = 'manual';
-        } else {
-            $lunchStart = null;
-            $breakMode = ($data['break_mode'] ?? 'auto') === 'manual' ? 'manual' : 'auto';
-            $breakMin = $breakMode === 'auto'
-                ? $this->autoBreakMinutes(
-                    $data['start_time'],
-                    $data['end_time'],
-                    (int) ($team->break_interval_min ?? 180),
-                    (int) ($team->break_len_min ?? 15),
-                )
-                : (int) ($data['break_min'] ?? 0);
-        }
+        $resolved = ShiftRules::resolve($team, $data);
 
         return [
             'employee_id' => (int) $data['employee_id'],
             'work_date' => $data['work_date'],
             'start_time' => $data['start_time'],
             'end_time' => $data['end_time'],
-            'break_min' => $breakMin,
-            'break_mode' => $breakMode,
-            'lunch_start' => $lunchStart,
-            'cobro' => $cobro,
+            'break_min' => $resolved['break_min'],
+            'break_mode' => $resolved['break_mode'],
+            'lunch_start' => $resolved['lunch_start'],
+            'cobro' => ($data['cobro'] ?? 'anticipado') === 'posterior' ? 'posterior' : 'anticipado',
         ];
-    }
-
-    private function grossMinutes(string $start, string $end): int
-    {
-        [$sh, $sm] = array_map('intval', explode(':', $start));
-        [$eh, $em] = array_map('intval', explode(':', $end));
-        $mins = ($eh * 60 + $em) - ($sh * 60 + $sm);
-        if ($mins <= 0) {
-            $mins += 24 * 60; // el turno cruza medianoche
-        }
-
-        return $mins;
-    }
-
-    private function breakCount(int $total, int $everyMin, int $lenMin): int
-    {
-        $count = 0;
-        $k = 1;
-        while ($k * $everyMin + $lenMin <= $total) {
-            $count++;
-            $k++;
-        }
-
-        return $count;
-    }
-
-    private function autoBreakMinutes(string $start, string $end, int $everyMin, int $lenMin): int
-    {
-        return $this->breakCount($this->grossMinutes($start, $end), $everyMin, $lenMin) * $lenMin;
     }
 }

@@ -17,8 +17,9 @@ Reemplaza la versión PHP plano (que queda en la carpeta como referencia:
 | Solo lectura | `app/Http/Controllers/PublicScheduleController.php` |
 | Rutas | `routes/api.php`, `routes/web.php` |
 | Seeders | `TeamSeeder` (CSR, Contabilidad), `EmployeeSeeder` (5 asesores CSR) |
+| Plantillas / generar | `app/Models/ShiftTemplate.php`, `Api/ShiftTemplateController.php`, `Api/ScheduleController.php`, `app/Support/ShiftRules.php` |
 | Frontend | `resources/views/app.blade.php` (editable) y `public.blade.php` (solo lectura); lógica compartida en `public/assets/horario.js` + `public/assets/horario.css` |
-| Pruebas | `tests/Feature/ScheduleApiTest.php` (19 casos) |
+| Pruebas | `tests/Feature/ScheduleApiTest.php` + `TemplateScheduleTest.php` (27 casos) |
 
 ## Equipos y reglas de descanso
 
@@ -53,6 +54,28 @@ pero **sin poder editar** nada y solo con los empleados de ese equipo. La págin
 lleva `noindex`. Si el enlace se filtra, se regenera desde ⚙ Equipos y el
 anterior deja de funcionar.
 
+## Plantilla semanal y generar el mes
+
+Para no cargar el mismo turno día por día:
+
+- **Plantilla por empleado** (botón **🗓 Plantillas**): cada empleado tiene un
+  turno fijo de **entre semana** (`kind = weekday`, Lun–Vie) y otro de **fin de
+  semana** (`kind = weekend`, Sáb–Dom). Poner «Activa: No» en el de fin de semana
+  = ese empleado no trabaja sábados/domingos. Una fila por (empleado, kind).
+- **Generar mes**: desde el mismo modal, «Generar mes completo» / «Solo entre
+  semana» / «Solo fines de semana» crea los turnos del mes visible a partir de
+  las plantillas. Aplica la regla de descanso/almuerzo del equipo. **No borra**
+  nada y **omite** los turnos que quedarían idénticos a uno ya guardado
+  (mismo empleado, fecha, entrada y salida), así que se puede volver a correr.
+  Si cambias la plantilla y regeneras, los turnos nuevos se **agregan** además
+  de los que ya había.
+- **Repetir un turno puntual** (dentro del editor de turno → «Repetir este
+  turno…»): casillas L–D (Lun–Vie marcadas) → crea copias de ese turno en los
+  días elegidos del mes visible. También hay «↳ guardar como plantilla».
+
+`weekdays` en `/api/shifts/repeat` usa la convención de JS `getDay()`:
+0 = domingo … 6 = sábado.
+
 ## Contrato de la API
 
 ```
@@ -78,6 +101,17 @@ PUT    /api/shifts {id, ...}             → {ok:true}
 DELETE /api/shifts?id=X                  → {ok:true}
 
 GET    /api/ver/{token}/data?month=YYYY-MM → { team, employees, shifts }  (solo lectura)
+
+GET    /api/templates?team=ID            → [{id, employee_id, kind, start_time,
+                                             end_time, lunch_start, cobro, active}, ...]
+POST   /api/templates {employee_id, kind, start_time, end_time,
+                       lunch_start?, cobro?, active?}  → template  (upsert por employee_id+kind)
+DELETE /api/templates?employee_id=X&kind=weekday|weekend → {ok:true}
+
+POST   /api/schedule/generate {team_id, month, kinds?:["weekday","weekend"]}
+                                          → {created, skipped}
+POST   /api/shifts/repeat {employee_id, month, weekdays:[0..6], start_time,
+                           end_time, lunch_start?, cobro?}  → {created, skipped}
 ```
 
 `work_date` en `YYYY-MM-DD`, horas en `HH:mm`. El `break_min` / `lunch_start`
@@ -112,7 +146,10 @@ Cubren: creación de los dos equipos base, empleados por equipo, cascada al
 borrar, regla de descanso CSR (varios casos + medianoche), almuerzo de
 Contabilidad (se guarda, se descuenta, se rechaza si no cabe), filtro por
 equipo y por mes, enlace de solo lectura (solo su equipo, token inválido → 404),
-CRUD de equipos con el guard de borrado y regeneración de token.
+CRUD de equipos con el guard de borrado y regeneración de token, plantillas
+(upsert único por empleado+kind), generar mes (cuenta de días entre semana / fin
+de semana, plantilla inactiva no genera, regenerar omite idénticos pero sigue
+siendo aditivo) y repetir turno por días de la semana.
 
 ## Subir a un hosting en línea (PHP + MySQL)
 

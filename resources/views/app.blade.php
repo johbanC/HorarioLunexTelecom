@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/horario.css?v=2">
+<link rel="stylesheet" href="/assets/horario.css?v=3">
 </head>
 <body>
 
@@ -38,6 +38,7 @@
   <div class="toolbar">
     <h2 id="gridTitle">Cuadrícula del mes</h2>
     <div style="display:flex; gap:8px;">
+      <button class="btn" id="manageTemplatesBtn">🗓 Plantillas</button>
       <button class="btn" id="manageEmployeesBtn">👤 Empleados</button>
     </div>
   </div>
@@ -52,6 +53,6 @@
 <div id="modalRoot"></div>
 
 <script>window.HORARIO = { editable: true, apiBase: "/api" };</script>
-<script src="/assets/horario.js?v=2"></script>
+<script src="/assets/horario.js?v=3"></script>
 </body>
 </html>

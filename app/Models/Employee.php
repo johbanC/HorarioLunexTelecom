@@ -28,4 +28,9 @@ class Employee extends Model
     {
         return $this->hasMany(Shift::class);
     }
+
+    public function shiftTemplates(): HasMany
+    {
+        return $this->hasMany(ShiftTemplate::class);
+    }
 }

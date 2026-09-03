@@ -567,6 +567,25 @@
         : '<div class="brk-label" style="margin-top:6px;">Sin descanso (turno corto)</div>';
     }
 
+    function repeatBlock() {
+      var boxes = WEEK_PICK.map(function (w) {
+        var pre = (w.d >= 1 && w.d <= 5);
+        return '<label style="font-size:11px;display:inline-flex;align-items:center;gap:3px;margin-right:6px;">' +
+          '<input type="checkbox" data-rep-day="' + w.d + '"' + (pre ? " checked" : "") + '> ' + w.l + '</label>';
+      }).join("");
+      return '<details class="team-rule-fields" style="margin-top:10px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:600;">Repetir este turno / guardarlo como plantilla</summary>' +
+        '<div class="hint" style="margin-top:8px;">Repetir en ' + escapeHtml(monthLabelText()) + ', los días:</div>' +
+        '<div style="margin:6px 0;">' + boxes + '</div>' +
+        '<button type="button" class="btn small" id="repeatBtn">Repetir en el mes</button>' +
+        '<div id="repeatOut" class="hint"></div>' +
+        '<div class="hint" style="margin-top:10px;">Guardar estas horas como plantilla fija de este empleado:</div>' +
+        '<div class="share-box" style="margin-top:4px;">' +
+        '<button type="button" class="btn small ghost" data-savetpl="weekday">↳ entre semana</button>' +
+        '<button type="button" class="btn small ghost" data-savetpl="weekend">↳ fin de semana</button>' +
+        '</div><div id="tplOut" class="hint"></div>' +
+        '</details>';
+    }
+
     function draw() {
       var html = '<div class="overlay" id="ovl"><div class="modal">' +
         '<h3>' + (isNew ? "Nuevo turno" : "Editar turno") + '</h3>' +
@@ -587,6 +606,7 @@
         '<button type="button" class="' + (s.cobro !== "posterior" ? "active anticipado" : "") + '" data-cobro="anticipado">Cobro anticipado</button>' +
         '<button type="button" class="' + (s.cobro === "posterior" ? "active posterior" : "") + '" data-cobro="posterior">Cobro posterior</button>' +
         '</div>' +
+        repeatBlock() +
         '<div class="modal-actions">' +
         (isNew ? '<div></div>' : '<button class="btn danger" id="removeShift">Eliminar turno</button>') +
         '<div class="right"><button class="btn ghost" id="cancelBtn">Cancelar</button><button class="btn primary" id="saveBtn">Guardar</button></div>' +
@@ -620,6 +640,39 @@
       root.querySelectorAll("[data-cobro]").forEach(function (btn) {
         btn.addEventListener("click", function () { s.cobro = btn.getAttribute("data-cobro"); draw(); });
       });
+
+      var repeatBtn = document.getElementById("repeatBtn");
+      if (repeatBtn) repeatBtn.addEventListener("click", function () {
+        var days = Array.prototype.map.call(root.querySelectorAll("[data-rep-day]:checked"), function (c) { return +c.getAttribute("data-rep-day"); });
+        var out = document.getElementById("repeatOut");
+        if (!days.length) { out.textContent = "Marca al menos un día."; return; }
+        if (!s.start || !s.end) { out.textContent = "Falta entrada o salida."; return; }
+        out.textContent = "Repitiendo…";
+        apiSend("shifts/repeat", "POST", {
+          employee_id: +selectedEmp, month: state.monthKey, weekdays: days,
+          start_time: s.start, end_time: s.end,
+          lunch_start: isLunch() ? (s.lunchStart || null) : null,
+          cobro: s.cobro === "posterior" ? "posterior" : "anticipado"
+        }).then(function (r) {
+          out.textContent = "Listo: " + r.created + " creado(s), " + r.skipped + " omitido(s).";
+          return loadMonth(state.monthKey);
+        }).then(function () { renderAll(); }).catch(function (e) { out.textContent = ""; alert("No se pudo repetir: " + e.message); });
+      });
+
+      root.querySelectorAll("[data-savetpl]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var out = document.getElementById("tplOut");
+          out.textContent = "Guardando…";
+          apiSend("templates", "POST", {
+            employee_id: +selectedEmp, kind: btn.getAttribute("data-savetpl"),
+            start_time: s.start, end_time: s.end,
+            lunch_start: isLunch() ? (s.lunchStart || null) : null,
+            cobro: s.cobro === "posterior" ? "posterior" : "anticipado", active: true
+          }).then(function () { out.textContent = "Plantilla guardada."; })
+            .catch(function (e) { out.textContent = ""; alert("No se pudo guardar la plantilla: " + e.message); });
+        });
+      });
+
       document.getElementById("cancelBtn").addEventListener("click", closeModal);
       document.getElementById("ovl").addEventListener("click", function (ev) { if (ev.target.id === "ovl") closeModal(); });
 
@@ -855,11 +908,112 @@
     draw();
   }
 
+  // ---------------- plantilla semanal / generar mes ----------------
+  // Orden Lun..Dom con la convención getDay() (0=dom).
+  var WEEK_PICK = [{ d: 1, l: "Lun" }, { d: 2, l: "Mar" }, { d: 3, l: "Mié" }, { d: 4, l: "Jue" }, { d: 5, l: "Vie" }, { d: 6, l: "Sáb" }, { d: 0, l: "Dom" }];
+
+  function monthLabelText() {
+    var y = +state.monthKey.slice(0, 4), m = +state.monthKey.slice(5, 7);
+    return MESES[m - 1] + " " + y;
+  }
+
+  function openTemplateEditor() {
+    if (!EDITABLE || !state.team) return;
+    var root = document.getElementById("modalRoot");
+    var templates = [];
+
+    function tplOf(empId, kind) {
+      return templates.find(function (t) { return t.employee_id === +empId && t.kind === kind; });
+    }
+
+    function rowFields(empId, kind) {
+      var t = tplOf(empId, kind) || { start_time: "08:00", end_time: "17:00", lunch_start: "13:00", cobro: "anticipado", active: false };
+      var lunchField = isLunch()
+        ? '<div class="field"><label>Almuerzo</label><input type="time" data-f="lunch_start" value="' + esc(t.lunch_start || "13:00") + '"></div>'
+        : '';
+      return '<div class="field-row" data-tpl="1" data-emp="' + empId + '" data-kind="' + kind + '">' +
+        '<div class="field"><label>Entrada</label><input type="time" data-f="start_time" value="' + esc(t.start_time) + '"></div>' +
+        '<div class="field"><label>Salida</label><input type="time" data-f="end_time" value="' + esc(t.end_time) + '"></div>' +
+        lunchField +
+        '<div class="field"><label>Cobro</label><select data-f="cobro"><option value="anticipado"' + (t.cobro !== "posterior" ? " selected" : "") + '>Anticipado</option><option value="posterior"' + (t.cobro === "posterior" ? " selected" : "") + '>Posterior</option></select></div>' +
+        '<div class="field"><label>Activa</label><select data-f="active"><option value="1"' + (t.active ? " selected" : "") + '>Sí</option><option value="0"' + (t.active ? "" : " selected") + '>No</option></select></div>' +
+        '<div class="field" style="align-self:end;"><button class="btn primary small" data-savetpl="1">Guardar</button></div>' +
+        '</div>';
+    }
+
+    function empBlock(e) {
+      return '<div class="team-rule-fields">' +
+        '<div style="font-weight:600;font-size:13px;margin-bottom:6px;">' + escapeHtml(e.name) + '</div>' +
+        '<div class="hint">Entre semana (Lun–Vie)</div>' + rowFields(e.id, "weekday") +
+        '<div class="hint" style="margin-top:8px;">Fin de semana (Sáb–Dom) — pon «Activa: No» si no trabaja</div>' + rowFields(e.id, "weekend") +
+        '</div>';
+    }
+
+    function draw() {
+      var html = '<div class="overlay" id="ovlT"><div class="modal" style="max-width:640px;">' +
+        '<h3>Plantilla semanal · ' + escapeHtml(team().name) + '</h3>' +
+        '<div class="modal-sub">Turno fijo de cada empleado para entre semana y para fin de semana</div>' +
+        '<div id="tplEmps">' + state.employees.map(empBlock).join("") + '</div>' +
+        (state.employees.length ? '' : '<div class="modal-sub">Agrega empleados primero (botón 👤 Empleados).</div>') +
+        '<div class="team-rule-fields" style="margin-top:12px;">' +
+        '<div class="hint">Crea los turnos de <b>' + escapeHtml(monthLabelText()) + '</b> con estas plantillas. No borra lo que ya haya; los turnos idénticos ya existentes se omiten.</div>' +
+        '<div class="share-box" style="margin-top:8px;">' +
+        '<button class="btn" data-gen="both">Generar mes completo</button>' +
+        '<button class="btn ghost" data-gen="weekday">Solo entre semana</button>' +
+        '<button class="btn ghost" data-gen="weekend">Solo fines de semana</button>' +
+        '</div><div id="genResult" class="hint"></div>' +
+        '</div>' +
+        '<div class="modal-actions"><div></div><div class="right"><button class="btn ghost" id="closeTplBtn">Cerrar</button></div></div>' +
+        '</div></div>';
+      root.innerHTML = html;
+
+      root.querySelectorAll("[data-savetpl]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var row = btn.closest("[data-tpl]");
+          var payload = { employee_id: +row.getAttribute("data-emp"), kind: row.getAttribute("data-kind") };
+          row.querySelectorAll("[data-f]").forEach(function (el) {
+            var k = el.getAttribute("data-f");
+            payload[k] = (k === "active") ? (el.value === "1") : el.value;
+          });
+          btn.textContent = "…";
+          apiSend("templates", "POST", payload)
+            .then(function () { return apiGet("templates?team=" + state.team.id); })
+            .then(function (t) { templates = t; btn.textContent = "✓ Guardada"; setTimeout(function () { btn.textContent = "Guardar"; }, 1400); })
+            .catch(function (e) { btn.textContent = "Guardar"; alert("No se pudo guardar la plantilla: " + e.message); });
+        });
+      });
+
+      root.querySelectorAll("[data-gen]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var mode = btn.getAttribute("data-gen");
+          var kinds = mode === "both" ? ["weekday", "weekend"] : [mode];
+          var out = document.getElementById("genResult");
+          out.textContent = "Generando…";
+          apiSend("schedule/generate", "POST", { team_id: state.team.id, month: state.monthKey, kinds: kinds })
+            .then(function (r) {
+              out.textContent = "Listo: " + r.created + " turno(s) creado(s), " + r.skipped + " omitido(s).";
+              return loadMonth(state.monthKey);
+            })
+            .then(renderAll)
+            .catch(function (e) { out.textContent = ""; alert("No se pudo generar: " + e.message); });
+        });
+      });
+
+      document.getElementById("closeTplBtn").addEventListener("click", function () { closeModal(); });
+      document.getElementById("ovlT").addEventListener("click", function (ev) { if (ev.target.id === "ovlT") closeModal(); });
+    }
+
+    apiGet("templates?team=" + state.team.id).then(function (t) { templates = t; draw(); }).catch(function (e) {
+      alert("No se pudieron cargar las plantillas: " + e.message);
+    });
+  }
+
   // ---------------- navegación ----------------
   function bind(id, ev, fn) { var el = document.getElementById(id); if (el) el.addEventListener(ev, fn); }
   bind("prevMonth", "click", function () { shiftMonth(-1); });
   bind("nextMonth", "click", function () { shiftMonth(1); });
   bind("manageEmployeesBtn", "click", openEmployeeEditor);
+  bind("manageTemplatesBtn", "click", openTemplateEditor);
   bind("refreshBtn", "click", refreshQuiet);
 
   function shiftMonth(delta) {
