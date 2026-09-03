@@ -41,6 +41,12 @@ se crean equipos nuevos y se ve/regenera el enlace de cada uno.
 Turnos que cruzan medianoche se manejan sumando 24 h. Cada turno lleva
 `cobro` = `anticipado` | `posterior`, resumido en las estadísticas.
 
+**Filtro por días** (barra sobre la cuadrícula): «Todos / Lun–Vie / Sáb–Dom» +
+7 botones L M M J V S D para armar un filtro a medida. Solo oculta/muestra filas
+en la cuadrícula (para cargar más fácil, p. ej. la rotación de fines de semana);
+el subtotal del pie se recalcula a los días visibles. Se recuerda por navegador
+(`localStorage`). También está en la vista de solo lectura.
+
 **Varios turnos por persona el mismo día** (cuando alguien cubre horas): en
 la cuadrícula, cada empleado tiene un botón **＋ turno** que abre un turno nuevo
 para esa persona ese día, con la entrada ya puesta al final de su último turno.

@@ -10,12 +10,28 @@
   var DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
   var DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 
+  var ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]; // getDay(): 0=domingo … 6=sábado
+
+  function loadDayFilter() {
+    try {
+      var raw = JSON.parse(localStorage.getItem("horario.dayFilter") || "null");
+      if (Array.isArray(raw) && raw.length && raw.every(function (n) { return ALL_DAYS.indexOf(n) !== -1; })) {
+        return raw.slice().sort();
+      }
+    } catch (e) { /* sin localStorage: se usa el valor por defecto */ }
+    return ALL_DAYS.slice();
+  }
+  function saveDayFilter() {
+    try { localStorage.setItem("horario.dayFilter", JSON.stringify(state.dayFilter)); } catch (e) { /* ignora */ }
+  }
+
   var state = {
     teams: [],
     team: CFG.team || null,          // equipo actual (objeto de config)
     employees: [],                   // [{id,name,order}] del equipo actual
     monthKey: currentMonthKey(),
     monthData: { days: {} },         // { "YYYY-MM-DD": { empId: [ {dbId,start,end,breakMin,breakMode,lunchStart,cobro} ] } }
+    dayFilter: loadDayFilter(),      // qué días de la semana se muestran en la cuadrícula
     ready: false
   };
 
@@ -304,8 +320,65 @@
   function renderAll() {
     renderMonthLabel();
     renderTeamStrip();
+    renderDayFilter();
     renderStats();
     renderGrid();
+  }
+
+  var DOW_LABELS = ["D", "L", "M", "M", "J", "V", "S"]; // getDay()
+  var DOW_TITLES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+  function sameSet(a, b) {
+    if (a.length !== b.length) return false;
+    var s = b.slice().sort();
+    return a.slice().sort().every(function (v, i) { return v === s[i]; });
+  }
+  function dayFilterLabel() {
+    var f = state.dayFilter;
+    if (sameSet(f, [1, 2, 3, 4, 5])) return "lun a vie";
+    if (sameSet(f, [0, 6])) return "sáb y dom";
+    return [1, 2, 3, 4, 5, 6, 0].filter(function (d) { return f.indexOf(d) !== -1; })
+      .map(function (d) { return DOW_TITLES[d].slice(0, 3); }).join(", ");
+  }
+  function setDayFilter(days) {
+    state.dayFilter = days.slice().sort();
+    saveDayFilter();
+    renderDayFilter();
+    renderGrid();
+  }
+  function renderDayFilter() {
+    var el = document.getElementById("dayFilter");
+    if (!el) return;
+    var f = state.dayFilter;
+    var presets = [
+      { l: "Todos", days: ALL_DAYS },
+      { l: "Lun–Vie", days: [1, 2, 3, 4, 5] },
+      { l: "Sáb–Dom", days: [0, 6] }
+    ];
+    var html = '<span class="lbl">Ver</span>';
+    presets.forEach(function (p) {
+      html += '<button data-preset="' + p.days.join(",") + '" class="' + (sameSet(f, p.days) ? "on" : "") + '">' + p.l + '</button>';
+    });
+    html += '<span class="sep"></span>';
+    [1, 2, 3, 4, 5, 6, 0].forEach(function (d) {
+      html += '<button class="dow ' + (f.indexOf(d) !== -1 ? "on" : "") + '" data-dow="' + d + '" title="' + DOW_TITLES[d] + '">' + DOW_LABELS[d] + '</button>';
+    });
+    el.innerHTML = html;
+
+    el.querySelectorAll("[data-preset]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        setDayFilter(b.getAttribute("data-preset").split(",").map(Number));
+      });
+    });
+    el.querySelectorAll("[data-dow]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var d = +b.getAttribute("data-dow");
+        var next = state.dayFilter.indexOf(d) !== -1
+          ? state.dayFilter.filter(function (x) { return x !== d; })
+          : state.dayFilter.concat([d]);
+        if (!next.length) next = ALL_DAYS.slice(); // nunca dejar todo oculto
+        setDayFilter(next);
+      });
+    });
   }
 
   function renderMonthLabel() {
@@ -415,10 +488,17 @@
     for (var h = hr.start; h < hr.end; h++) { thead += '<th class="hour-col">' + pad(h) + ':00</th>'; }
     thead += '<th class="total-col">Turno</th><th class="total-col day-total">Total día</th></tr></thead>';
 
+    var filtered = state.dayFilter.length < 7;
+    var visibleTotal = 0;
+    var gt = document.getElementById("gridTitle");
+    if (gt) gt.textContent = "Cuadrícula del mes" + (filtered ? " · " + dayFilterLabel() : "");
+
     var body = "<tbody>";
     for (var day = 1; day <= nDays; day++) {
       var dk = dateStr(state.monthKey, day);
       var wd = weekdayOf(state.monthKey, day);
+      if (state.dayFilter.indexOf(wd) === -1) continue;
+      visibleTotal += t.perDay[dk] || 0;
       var isWeekend = (wd === 0 || wd === 6);
       var rowClass = isWeekend ? "weekend" : "";
 
@@ -484,9 +564,11 @@
     }
     body += "</tbody>";
 
-    var tfoot = '<tfoot><tr><td class="foot-label" colspan="2">Total mes</td>';
+    var footLabel = filtered ? "Total (días filtrados)" : "Total mes";
+    var footValue = filtered ? visibleTotal : t.total;
+    var tfoot = '<tfoot><tr><td class="foot-label" colspan="2">' + footLabel + '</td>';
     for (var hh2 = hr.start; hh2 < hr.end; hh2++) { tfoot += '<td></td>'; }
-    tfoot += '<td colspan="2">' + fmtH(t.total) + 'h</td></tr></tfoot>';
+    tfoot += '<td colspan="2">' + fmtH(footValue) + 'h</td></tr></tfoot>';
 
     table.innerHTML = thead + body + tfoot;
 

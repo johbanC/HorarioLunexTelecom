@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/horario.css?v=4">
+<link rel="stylesheet" href="/assets/horario.css?v=5">
 </head>
 <body>
 
@@ -43,6 +43,8 @@
     </div>
   </div>
 
+  <div id="dayFilter" class="day-filter"></div>
+
   <div class="grid-scroll">
     <table class="sched" id="schedTable"></table>
   </div>
@@ -53,6 +55,6 @@
 <div id="modalRoot"></div>
 
 <script>window.HORARIO = { editable: true, apiBase: "/api" };</script>
-<script src="/assets/horario.js?v=4"></script>
+<script src="/assets/horario.js?v=5"></script>
 </body>
 </html>
