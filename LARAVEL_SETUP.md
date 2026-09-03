@@ -1,86 +1,106 @@
 # Horario Lunex — versión Laravel
 
-Reconstrucción en Laravel 13 del planificador de horarios del equipo CSR de
-Lunex Telecom. Reemplaza la versión PHP plano (que queda en la carpeta como
-referencia: `index.html`, `schema.sql`, `api/`).
+Planificador de horarios de Lunex Telecom en Laravel 13. Maneja **varios
+equipos** (CSR, Contabilidad, …), cada uno con su propia regla de descanso, y
+un **enlace de solo lectura** que se le comparte a cada equipo.
 
-## Qué se creó
+Reemplaza la versión PHP plano (que queda en la carpeta como referencia:
+`index.html`, `schema.sql`, `api/`).
+
+## Estructura
 
 | Pieza | Archivo |
 |---|---|
-| Migración empleados | `database/migrations/2026_09_02_000001_create_employees_table.php` |
-| Migración turnos | `database/migrations/2026_09_02_000002_create_shifts_table.php` |
-| Modelos | `app/Models/Employee.php`, `app/Models/Shift.php` |
-| Controladores API | `app/Http/Controllers/Api/EmployeeController.php`, `ShiftController.php` |
-| Rutas API | `routes/api.php` (registradas en `bootstrap/app.php`) |
-| Seeder | `database/seeders/EmployeeSeeder.php` (Karelys, Juana, Valentina, Juan Manuel, Juanita Restrepo) |
-| Frontend | `resources/views/app.blade.php` (el `index.html` original, con `fetch` apuntando a `/api/...`) servido en `/` desde `routes/web.php` |
-| Pruebas | `tests/Feature/ScheduleApiTest.php` |
+| Migraciones | `database/migrations/2026_09_02_*` (employees, shifts), `2026_09_03_*` (teams, team_id, lunch_start) |
+| Modelos | `app/Models/Team.php`, `Employee.php`, `Shift.php` |
+| Controladores API | `app/Http/Controllers/Api/{Team,Employee,Shift}Controller.php` |
+| Solo lectura | `app/Http/Controllers/PublicScheduleController.php` |
+| Rutas | `routes/api.php`, `routes/web.php` |
+| Seeders | `TeamSeeder` (CSR, Contabilidad), `EmployeeSeeder` (5 asesores CSR) |
+| Frontend | `resources/views/app.blade.php` (editable) y `public.blade.php` (solo lectura); lógica compartida en `public/assets/horario.js` + `public/assets/horario.css` |
+| Pruebas | `tests/Feature/ScheduleApiTest.php` (19 casos) |
 
-## Reglas de negocio implementadas
+## Equipos y reglas de descanso
 
-- **Descanso automático**: 15 min por cada 3 horas completas trabajadas, y solo
-  si queda turno después (nunca al salir). Turno de 6h = 1 descanso; de 9h = 2.
-  Se calcula en el servidor (`ShiftController::autoBreakMinutes`) al guardar
-  cuando `break_mode = auto`; con `manual` se respeta el valor enviado.
-- **El descanso NO se descuenta del pago**: las horas pagadas = duración total
-  del turno (el frontend lo calcula en `shiftHours`).
-- Turnos que cruzan medianoche (ej. 22:00–02:00) se manejan sumando 24 h.
-- Cada turno lleva `cobro` = `anticipado` | `posterior`, resumido en las stats.
-- Borrar un empleado elimina en cascada sus turnos (FK `ON DELETE CASCADE`).
+Cada equipo (`teams`) tiene una `rule`:
+
+- **`interval`** (equipo CSR): un descanso corto cada X horas. Por defecto
+  **15 min cada 3 h completas**, y solo si queda turno después (nunca justo al
+  salir): 6 h → 1 descanso, 9 h → 2. `break_paid = true` → **no se descuenta del
+  pago**. Se calcula solo en el servidor (`ShiftController`).
+- **`lunch`** (equipo Contabilidad): **1 hora de almuerzo**, con la hora de
+  inicio elegida a mano en cada turno (`shifts.lunch_start`). `break_paid = false`
+  → **sí se descuenta del pago** (turno 9:00–18:00 = 8 h pagadas). El servidor
+  valida que el almuerzo quepa completo dentro del turno.
+
+Los parámetros (`break_len_min`, `break_interval_min`, `lunch_min`,
+`break_paid`) son editables por equipo desde el botón **⚙ Equipos**. Ahí también
+se crean equipos nuevos y se ve/regenera el enlace de cada uno.
+
+Turnos que cruzan medianoche se manejan sumando 24 h. Cada turno lleva
+`cobro` = `anticipado` | `posterior`, resumido en las estadísticas.
+
+## Enlace de solo lectura para el equipo
+
+Cada equipo tiene un `share_token`. El enlace que se comparte es:
+
+```
+https://TU-DOMINIO/ver/<share_token>
+```
+
+Muestra la misma cuadrícula (con navegación de meses y auto-refresco cada 20 s)
+pero **sin poder editar** nada y solo con los empleados de ese equipo. La página
+lleva `noindex`. Si el enlace se filtra, se regenera desde ⚙ Equipos y el
+anterior deja de funcionar.
 
 ## Contrato de la API
 
 ```
-GET    /api/employees              → [{id, name, sort_order}, ...]
-POST   /api/employees   {name}     → {id, name, sort_order}
-PUT    /api/employees   {id, name} → {ok:true}
-DELETE /api/employees?id=X         → {ok:true}   (cascada a sus turnos)
+GET    /api/teams                        → [{id, name, slug, share_token, rule,
+                                             break_len_min, break_interval_min,
+                                             lunch_min, break_paid}, ...]
+POST   /api/teams   {name, rule, ...}    → {id, ...}
+PUT    /api/teams   {id, ...}            → {ok:true}
+DELETE /api/teams?id=X                   → {ok:true}  (409 si tiene empleados)
+POST   /api/teams/regenerate-token {id}  → {share_token}
 
-GET    /api/shifts?month=YYYY-MM   → [{id, employee_id, work_date, start_time,
-                                       end_time, break_min, break_mode, cobro}, ...]
-                                      (work_date "YYYY-MM-DD", horas "HH:mm")
-POST   /api/shifts   {employee_id, work_date, start_time, end_time,
-                       break_min, break_mode, cobro}  → {id}
-PUT    /api/shifts   {id, ...}      → {ok:true}
-DELETE /api/shifts?id=X             → {ok:true}
+GET    /api/employees?team=ID            → [{id, team_id, name, sort_order}, ...]
+POST   /api/employees {name, team_id}    → {id, team_id, name, sort_order}
+PUT    /api/employees {id, name[, team_id]} → {ok:true}
+DELETE /api/employees?id=X               → {ok:true}   (cascada a sus turnos)
+
+GET    /api/shifts?month=YYYY-MM[&team=ID] → [{id, employee_id, work_date,
+                                              start_time, end_time, break_min,
+                                              break_mode, lunch_start, cobro}, ...]
+POST   /api/shifts {employee_id, work_date, start_time, end_time,
+                    lunch_start?, break_min?, break_mode?, cobro?} → {id}
+PUT    /api/shifts {id, ...}             → {ok:true}
+DELETE /api/shifts?id=X                  → {ok:true}
+
+GET    /api/ver/{token}/data?month=YYYY-MM → { team, employees, shifts }  (solo lectura)
 ```
 
-## Correr en local (Laragon)
+`work_date` en `YYYY-MM-DD`, horas en `HH:mm`. El `break_min` / `lunch_start`
+finales los decide el servidor según la regla del equipo del empleado.
 
-Ya está todo hecho, pero para reproducirlo desde cero:
+## Correr en local (Laragon)
 
 ```bash
 composer install
 cp .env.example .env
 php artisan key:generate
+php artisan migrate --seed        # base nueva
+# o, sobre una base ya existente con datos: php artisan migrate
 ```
 
-`.env` ya viene apuntando a MySQL de Laragon:
+`.env` ya apunta a MySQL de Laragon (`horario_lunex`, `root`, sin clave).
+Sesión/caché/colas en `file`/`sync`: la base solo tiene `teams`, `employees` y
+`shifts`.
 
-```
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_DATABASE=horario_lunex
-DB_USERNAME=root
-DB_PASSWORD=
-```
-
-Crear tablas y datos iniciales:
-
-```bash
-php artisan migrate:fresh --seed
-```
-
-Abrir la app:
-
-- `http://horariolunextelecom.test/` (Laragon detecta Laravel y sirve `public/`;
-  si no toma el dominio, en el menú de Laragon: Apache → reload, o Menu → www →
-  el proyecto).
-- o `php artisan serve` y entrar a `http://127.0.0.1:8000/`.
-
-Sesión/caché/colas están en `file`/`sync`, así que la base de datos solo tiene
-las tablas `employees` y `shifts` (más limpio para el hosting).
+Abrir:
+- `http://horariolunextelecom.test/` (si el dominio no resuelve, botón **Reload**
+  en Laragon para que registre el vhost y el `hosts`).
+- o `php artisan serve` → `http://127.0.0.1:8000/`.
 
 ## Pruebas
 
@@ -88,16 +108,18 @@ las tablas `employees` y `shifts` (más limpio para el hosting).
 php artisan test
 ```
 
-Cubren: listado y orden de empleados, alta al final de la lista, cascada al
-borrar, la regla de descanso (varios casos, incluida medianoche), descanso
-manual, y el filtro por mes.
+Cubren: creación de los dos equipos base, empleados por equipo, cascada al
+borrar, regla de descanso CSR (varios casos + medianoche), almuerzo de
+Contabilidad (se guarda, se descuenta, se rechaza si no cabe), filtro por
+equipo y por mes, enlace de solo lectura (solo su equipo, token inválido → 404),
+CRUD de equipos con el guard de borrado y regeneración de token.
 
 ## Subir a un hosting en línea (PHP + MySQL)
 
-1. Subir todo el proyecto **menos** `/vendor` y `.env`.
-2. En el servidor: `composer install --no-dev --optimize-autoloader`.
-3. Crear `.env` (copiar de `.env.example`) con los datos de MySQL del hosting,
-   `APP_ENV=production`, `APP_DEBUG=false`, y `php artisan key:generate`.
+1. Subir el proyecto **sin** `/vendor` ni `.env`.
+2. `composer install --no-dev --optimize-autoloader`.
+3. `.env` desde `.env.example` con MySQL del hosting, `APP_ENV=production`,
+   `APP_DEBUG=false`, `APP_URL=https://tu-dominio`, y `php artisan key:generate`.
+   `APP_URL` importa: es la base de los enlaces `/ver/...` que ve el equipo.
 4. `php artisan migrate --seed --force`.
-5. Apuntar el dominio a la carpeta `public/` (o usar el `public/.htaccess` que
-   ya viene). `php artisan config:cache route:cache` para producción.
+5. Dominio apuntando a `public/`. `php artisan config:cache route:cache`.

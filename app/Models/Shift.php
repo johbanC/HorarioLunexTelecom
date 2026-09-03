@@ -14,6 +14,7 @@ class Shift extends Model
         'end_time',
         'break_min',
         'break_mode',
+        'lunch_start',
         'cobro',
     ];
 
@@ -37,20 +38,22 @@ class Shift extends Model
             'id' => $this->id,
             'employee_id' => (int) $this->employee_id,
             'work_date' => $this->asDateString($this->getRawOriginal('work_date')),
-            'start_time' => substr((string) $this->getRawOriginal('start_time'), 0, 5),
-            'end_time' => substr((string) $this->getRawOriginal('end_time'), 0, 5),
+            'start_time' => $this->asHm($this->getRawOriginal('start_time')),
+            'end_time' => $this->asHm($this->getRawOriginal('end_time')),
             'break_min' => (int) $this->break_min,
             'break_mode' => $this->break_mode,
+            'lunch_start' => $this->asHm($this->getRawOriginal('lunch_start')),
             'cobro' => $this->cobro,
         ];
     }
 
+    private function asHm(?string $raw): ?string
+    {
+        return $raw ? substr($raw, 0, 5) : null;
+    }
+
     private function asDateString(?string $raw): ?string
     {
-        if (! $raw) {
-            return null;
-        }
-
-        return substr($raw, 0, 10);
+        return $raw ? substr($raw, 0, 10) : null;
     }
 }

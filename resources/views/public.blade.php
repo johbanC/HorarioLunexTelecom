@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Horario Lunex</title>
+<meta name="robots" content="noindex, nofollow">
+<title>Horario {{ $team['name'] }} · Lunex</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -16,8 +17,8 @@
     <div class="brand">
       <div class="badge">L</div>
       <div>
-        <h1>Horario Lunex</h1>
-        <div class="sub">Turnos y suma de horas del equipo · edición Laravel + MySQL</div>
+        <h1>Horario · {{ $team['name'] }}</h1>
+        <div class="sub">Turnos del equipo · vista de solo lectura</div>
       </div>
     </div>
     <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
@@ -31,27 +32,31 @@
     </div>
   </header>
 
-  <div id="teamTabs" class="team-tabs"></div>
+  <div id="teamTabs"></div>
 
   <div class="stats" id="stats"></div>
 
   <div class="toolbar">
     <h2 id="gridTitle">Cuadrícula del mes</h2>
-    <div style="display:flex; gap:8px;">
-      <button class="btn" id="manageEmployeesBtn">👤 Empleados</button>
-    </div>
   </div>
 
   <div class="grid-scroll">
     <table class="sched" id="schedTable"></table>
   </div>
 
-  <footer class="note">Cada fila es un turno · el color identifica al empleado · el borde izquierdo marca el cobro (<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);vertical-align:1px;"></span> anticipado, <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--warn);vertical-align:1px;"></span> posterior) · las celdas con rayado <span style="display:inline-block;width:14px;height:9px;vertical-align:-1px;border:1px solid var(--border);background:repeating-linear-gradient(45deg, var(--surface) 0 3px, var(--border) 3px 4px);"></span> son el descanso / almuerzo · datos guardados en MySQL, se actualiza solo cada 20s</footer>
+  <footer class="note">El color identifica al empleado · el borde izquierdo marca el cobro · las celdas con rayado son el descanso / almuerzo · se actualiza solo cada 20s</footer>
 </div>
 
 <div id="modalRoot"></div>
 
-<script>window.HORARIO = { editable: true, apiBase: "/api" };</script>
+<script>
+  window.HORARIO = {
+    editable: false,
+    apiBase: "/api",
+    token: @json($team['share_token']),
+    team: @json($team)
+  };
+</script>
 <script src="/assets/horario.js?v=2"></script>
 </body>
 </html>
