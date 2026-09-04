@@ -47,6 +47,12 @@ en la cuadrícula (para cargar más fácil, p. ej. la rotación de fines de sema
 el subtotal del pie se recalcula a los días visibles. Se recuerda por navegador
 (`localStorage`). También está en la vista de solo lectura.
 
+**Filtro por asesor** (fila debajo del anterior): pastillas con el color de cada
+empleado del equipo actual; selección múltiple. Igual que el de días, solo
+oculta/muestra filas y el «Total (filtrado)» del pie se recalcula. Se reinicia
+al cambiar de equipo (no se guarda entre sesiones). Con un solo asesor
+seleccionado, «+ agregar turno» ya lo pre-selecciona.
+
 **Varios turnos por persona el mismo día** (cuando alguien cubre horas): en
 la cuadrícula, cada empleado tiene un botón **＋ turno** que abre un turno nuevo
 para esa persona ese día, con la entrada ya puesta al final de su último turno.

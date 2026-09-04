@@ -32,6 +32,7 @@
     monthKey: currentMonthKey(),
     monthData: { days: {} },         // { "YYYY-MM-DD": { empId: [ {dbId,start,end,breakMin,breakMode,lunchStart,cobro} ] } }
     dayFilter: loadDayFilter(),      // qué días de la semana se muestran en la cuadrícula
+    empFilter: [],                   // ids de empleados a mostrar; [] = todos
     ready: false
   };
 
@@ -264,6 +265,8 @@
   async function loadEmployees() {
     if (!state.team) { state.employees = []; return; }
     state.employees = mapEmployees(await apiGet("employees?team=" + state.team.id));
+    var ids = state.employees.map(function (e) { return e.id; });
+    state.empFilter = state.empFilter.filter(function (id) { return ids.indexOf(id) !== -1; });
   }
   async function loadMonth(key) {
     if (!state.team) { state.monthData = { days: {} }; return; }
@@ -321,8 +324,42 @@
     renderMonthLabel();
     renderTeamStrip();
     renderDayFilter();
+    renderEmpFilter();
     renderStats();
     renderGrid();
+  }
+
+  function renderEmpFilter() {
+    var el = document.getElementById("empFilter");
+    if (!el) return;
+    if (!state.employees.length) { el.innerHTML = ""; return; }
+
+    var html = '<span class="lbl">Asesor</span>';
+    html += '<button data-emp-all="1" class="' + (!state.empFilter.length ? "on" : "") + '">Todos</button>';
+    state.employees.forEach(function (e, i) {
+      var col = employeeColor(i);
+      var on = state.empFilter.indexOf(e.id) !== -1;
+      html += '<button data-emp-toggle="' + e.id + '" class="' + (on ? "on" : "") + '">' +
+        '<span class="dot" style="background:' + col.bg + '"></span>' + escapeHtml(e.name) + '</button>';
+    });
+    el.innerHTML = html;
+
+    var allBtn = el.querySelector("[data-emp-all]");
+    if (allBtn) allBtn.addEventListener("click", function () {
+      state.empFilter = [];
+      renderEmpFilter();
+      renderGrid();
+    });
+    el.querySelectorAll("[data-emp-toggle]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-emp-toggle");
+        state.empFilter = state.empFilter.indexOf(id) !== -1
+          ? state.empFilter.filter(function (x) { return x !== id; })
+          : state.empFilter.concat([id]);
+        renderEmpFilter();
+        renderGrid();
+      });
+    });
   }
 
   var DOW_LABELS = ["D", "L", "M", "M", "J", "V", "S"]; // getDay()
@@ -420,6 +457,7 @@
         if (state.team && id === state.team.id) return;
         state.team = state.teams.find(function (t) { return t.id === id; }) || state.team;
         state.employees = [];
+        state.empFilter = [];
         state.monthData = { days: {} };
         renderAll();
         Promise.all([loadEmployees(), loadMonth(state.monthKey)]).then(renderAll).catch(function (e) {
@@ -488,29 +526,34 @@
     for (var h = hr.start; h < hr.end; h++) { thead += '<th class="hour-col">' + pad(h) + ':00</th>'; }
     thead += '<th class="total-col">Turno</th><th class="total-col day-total">Total día</th></tr></thead>';
 
-    var filtered = state.dayFilter.length < 7;
+    var empFiltered = state.empFilter.length > 0;
+    var filtered = state.dayFilter.length < 7 || empFiltered;
     var visibleTotal = 0;
     var gt = document.getElementById("gridTitle");
-    if (gt) gt.textContent = "Cuadrícula del mes" + (filtered ? " · " + dayFilterLabel() : "");
+    var titleBits = [];
+    if (state.dayFilter.length < 7) titleBits.push(dayFilterLabel());
+    if (empFiltered) titleBits.push(state.empFilter.length + " asesor" + (state.empFilter.length > 1 ? "es" : ""));
+    if (gt) gt.textContent = "Cuadrícula del mes" + (titleBits.length ? " · " + titleBits.join(" · ") : "");
 
     var body = "<tbody>";
     for (var day = 1; day <= nDays; day++) {
       var dk = dateStr(state.monthKey, day);
       var wd = weekdayOf(state.monthKey, day);
       if (state.dayFilter.indexOf(wd) === -1) continue;
-      visibleTotal += t.perDay[dk] || 0;
       var isWeekend = (wd === 0 || wd === 6);
       var rowClass = isWeekend ? "weekend" : "";
 
       var rows = [];
+      var dayTotal = 0;
       state.employees.forEach(function (e) {
+        if (empFiltered && state.empFilter.indexOf(e.id) === -1) return;
         var shifts = (state.monthData.days[dk] && state.monthData.days[dk][e.id]) || [];
-        shifts.forEach(function (s, idx) { rows.push({ emp: e, shift: s, idx: idx }); });
+        shifts.forEach(function (s, idx) { rows.push({ emp: e, shift: s, idx: idx }); dayTotal += paidHours(s); });
       });
+      visibleTotal += dayTotal;
       var rowSpan = rows.length + (EDITABLE ? 1 : (rows.length === 0 ? 1 : 0));
       if (rowSpan < 1) rowSpan = 1;
 
-      var dayTotal = t.perDay[dk] || 0;
       var dateCell = '<td class="date-col" rowspan="' + rowSpan + '"><div class="d">' + day + '</div><div class="w">' + DIAS_CORTOS[wd] + '</div>' +
         '<div class="daytot">' + fmtH(dayTotal) + 'h</div></td>';
       var dayTotalCell = '<td class="total-col day-total' + (dayTotal === 0 ? ' zero' : '') + '" rowspan="' + rowSpan + '">' + fmtH(dayTotal) + 'h</td>';
@@ -564,7 +607,7 @@
     }
     body += "</tbody>";
 
-    var footLabel = filtered ? "Total (días filtrados)" : "Total mes";
+    var footLabel = filtered ? "Total (filtrado)" : "Total mes";
     var footValue = filtered ? visibleTotal : t.total;
     var tfoot = '<tfoot><tr><td class="foot-label" colspan="2">' + footLabel + '</td>';
     for (var hh2 = hr.start; hh2 < hr.end; hh2++) { tfoot += '<td></td>'; }
@@ -580,7 +623,8 @@
     });
     table.querySelectorAll("tr.add-row[data-new-date]").forEach(function (tr) {
       tr.addEventListener("click", function () {
-        openShiftEditor(tr.getAttribute("data-new-date"), null, -1);
+        var forcedEmp = state.empFilter.length === 1 ? state.empFilter[0] : null;
+        openShiftEditor(tr.getAttribute("data-new-date"), forcedEmp, -1);
       });
     });
     table.querySelectorAll("[data-add-emp]").forEach(function (btn) {
