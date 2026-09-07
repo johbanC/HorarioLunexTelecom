@@ -596,11 +596,16 @@
         var totalMin = grossMinutes(r.shift.start, r.shift.end);
         var sEnd = sMin + totalMin;
         var brks = breakSlots(r.shift);
+        var brkKind = isLunch() ? "Almuerzo" : "Descanso";
         for (var hh = hr.start; hh < hr.end; hh++) {
           var cs = hh * 60, ce = hh * 60 + 60;
           var segs = hourCellSegments(cs, ce, sMin, sEnd, brks);
-          var brkInCell = segs.some(function (sg) { return sg.type === "brk"; });
-          body += '<td class="hcell" title="' + (brkInCell ? (isLunch() ? "Almuerzo" : "Descanso") : "") + '"' + editAttr + ' data-date="' + dk + '" data-emp="' + r.emp.id + '" data-idx="' + r.idx + '">';
+          var cellBrks = brks.filter(function (b) { return (sMin + b.startOffset) < ce && cs < (sMin + b.endOffset); });
+          var cellTitle = cellBrks.map(function (b) {
+            return brkKind + " " + b.start + "–" + b.end + " · " + (b.endOffset - b.startOffset) + " min" +
+              (isLunch() ? " (se descuenta)" : " (no se descuenta)");
+          }).join(" · ");
+          body += '<td class="hcell" title="' + escapeHtml(cellTitle) + '"' + editAttr + ' data-date="' + dk + '" data-emp="' + r.emp.id + '" data-idx="' + r.idx + '">';
           body += '<div class="hbar">';
           segs.forEach(function (sg) {
             var style = 'width:' + sg.pct + '%;';
