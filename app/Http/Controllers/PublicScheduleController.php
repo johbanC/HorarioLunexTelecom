@@ -41,7 +41,7 @@ class PublicScheduleController extends Controller
         $employees = Employee::where('team_id', $team->id)
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->get(['id', 'team_id', 'name', 'sort_order']);
+            ->get(['id', 'team_id', 'name', 'sort_order', 'break_len_min', 'lunch_min']);
 
         $shifts = Shift::whereIn('employee_id', $employees->pluck('id'))
             ->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])

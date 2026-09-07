@@ -94,9 +94,10 @@ class ShiftController extends Controller
 
         $data = $request->validate($rules);
 
-        $team = Employee::find($data['employee_id'])?->team;
-        if ($team && $team->rule === 'lunch' && ! empty($data['lunch_start'])
-            && ! ShiftRules::lunchFits($team, $data['start_time'], $data['end_time'], $data['lunch_start'])) {
+        $employee = Employee::with('team')->find($data['employee_id']);
+        $cfg = ShiftRules::configFor($employee?->team, $employee);
+        if ($cfg['rule'] === 'lunch' && ! empty($data['lunch_start'])
+            && ! ShiftRules::lunchFits($cfg, $data['start_time'], $data['end_time'], $data['lunch_start'])) {
             abort(response()->json([
                 'error' => 'El almuerzo no cabe dentro del turno (revisa la hora de inicio del almuerzo).',
             ], 422));
@@ -105,11 +106,11 @@ class ShiftController extends Controller
         return $data;
     }
 
-    /** Aplica las reglas del equipo del empleado antes de guardar. */
+    /** Aplica las reglas del equipo del empleado (con overrides del asesor) antes de guardar. */
     private function normalize(array $data): array
     {
-        $team = Employee::find($data['employee_id'])?->team;
-        $resolved = ShiftRules::resolve($team, $data);
+        $employee = Employee::with('team')->find($data['employee_id']);
+        $resolved = ShiftRules::resolve(ShiftRules::configFor($employee?->team, $employee), $data);
 
         return [
             'employee_id' => (int) $data['employee_id'],

@@ -102,6 +102,55 @@ class ScheduleApiTest extends TestCase
         ];
     }
 
+    public function test_per_employee_break_len_override(): void
+    {
+        // Karelys tiene descanso de 20 min en vez de los 15 del equipo CSR.
+        $emp = $this->employee($this->csr(), 'Karelys');
+        $this->putJson('/api/employees', ['id' => $emp->id, 'name' => 'Karelys', 'break_len_min' => 20])->assertOk();
+
+        // 9h: con 20 min -> 2 descansos (k*180+20<=540 hasta k=2) -> 40 min
+        $this->postJson('/api/shifts', [
+            'employee_id' => $emp->id, 'work_date' => '2026-09-10',
+            'start_time' => '08:00', 'end_time' => '17:00', 'break_mode' => 'auto',
+        ])->assertOk();
+        $this->assertSame(40, Shift::first()->break_min);
+
+        // Otro asesor del mismo equipo sigue con 15.
+        $otro = $this->employee($this->csr(), 'Otro');
+        $this->postJson('/api/shifts', [
+            'employee_id' => $otro->id, 'work_date' => '2026-09-10',
+            'start_time' => '08:00', 'end_time' => '17:00', 'break_mode' => 'auto',
+        ])->assertOk();
+        $this->assertSame(30, Shift::where('employee_id', $otro->id)->first()->break_min);
+    }
+
+    public function test_per_employee_lunch_override(): void
+    {
+        $emp = $this->employee($this->contabilidad(), 'Diana');
+        $this->putJson('/api/employees', ['id' => $emp->id, 'name' => 'Diana', 'lunch_min' => 90])->assertOk();
+
+        $this->postJson('/api/shifts', [
+            'employee_id' => $emp->id, 'work_date' => '2026-09-10',
+            'start_time' => '09:00', 'end_time' => '19:00', 'lunch_start' => '13:00',
+        ])->assertOk();
+        $this->assertSame(90, Shift::first()->break_min);
+    }
+
+    public function test_clearing_employee_break_override_falls_back_to_team(): void
+    {
+        $emp = $this->employee($this->csr(), 'Karelys');
+        $this->putJson('/api/employees', ['id' => $emp->id, 'name' => 'Karelys', 'break_len_min' => 20])->assertOk();
+        $this->assertSame(20, $emp->fresh()->break_len_min);
+
+        $this->putJson('/api/employees', ['id' => $emp->id, 'name' => 'Karelys', 'break_len_min' => 0])->assertOk();
+        $this->assertNull($emp->fresh()->break_len_min);
+
+        // Renombrar sin mandar el override no lo borra.
+        $this->putJson('/api/employees', ['id' => $emp->id, 'name' => 'Karelys', 'break_len_min' => 20])->assertOk();
+        $this->putJson('/api/employees', ['id' => $emp->id, 'name' => 'Karelys R.'])->assertOk();
+        $this->assertSame(20, $emp->fresh()->break_len_min);
+    }
+
     public function test_contabilidad_lunch_is_stored_and_fixed_at_team_length(): void
     {
         $emp = $this->employee($this->contabilidad());

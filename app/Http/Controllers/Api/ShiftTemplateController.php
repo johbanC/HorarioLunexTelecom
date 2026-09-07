@@ -37,9 +37,11 @@ class ShiftTemplateController extends Controller
             'active' => ['nullable', 'boolean'],
         ]);
 
-        $team = Employee::find($data['employee_id'])?->team;
-        if ($team && $team->rule === 'lunch' && ! empty($data['lunch_start'])
-            && ! ShiftRules::lunchFits($team, $data['start_time'], $data['end_time'], $data['lunch_start'])) {
+        $employee = Employee::with('team')->find($data['employee_id']);
+        $team = $employee?->team;
+        $cfg = ShiftRules::configFor($team, $employee);
+        if ($cfg['rule'] === 'lunch' && ! empty($data['lunch_start'])
+            && ! ShiftRules::lunchFits($cfg, $data['start_time'], $data['end_time'], $data['lunch_start'])) {
             return response()->json(['error' => 'El almuerzo no cabe dentro del turno de la plantilla.'], 422);
         }
 

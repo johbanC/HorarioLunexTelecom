@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Employee;
 use App\Models\Team;
 
 /**
@@ -10,6 +11,23 @@ use App\Models\Team;
  */
 class ShiftRules
 {
+    /**
+     * Config efectiva de descanso: parte de la del equipo y aplica los overrides
+     * del asesor (employees.break_len_min / lunch_min) si están definidos.
+     *
+     * @return array{rule:string, break_len_min:int, break_interval_min:int, lunch_min:int, break_paid:bool}
+     */
+    public static function configFor(?Team $team, ?Employee $employee = null): array
+    {
+        return [
+            'rule' => $team->rule ?? 'interval',
+            'break_len_min' => (int) ($employee?->break_len_min ?? $team?->break_len_min ?? 15),
+            'break_interval_min' => (int) ($team?->break_interval_min ?? 180),
+            'lunch_min' => (int) ($employee?->lunch_min ?? $team?->lunch_min ?? 60),
+            'break_paid' => (bool) ($team->break_paid ?? true),
+        ];
+    }
+
     /** Minutos trabajados entre start y end ("HH:mm"), sumando 24 h si cruza medianoche. */
     public static function grossMinutes(string $start, string $end): int
     {
@@ -41,28 +59,27 @@ class ShiftRules
         return self::breakCount(self::grossMinutes($start, $end), $everyMin, $lenMin) * $lenMin;
     }
 
-    /** ¿El almuerzo (lunchStart + team.lunch_min) cabe completo dentro del turno? */
-    public static function lunchFits(Team $team, string $start, string $end, string $lunchStart): bool
+    /** ¿El almuerzo (lunchStart + lunch_min efectivo) cabe completo dentro del turno? */
+    public static function lunchFits(array $cfg, string $start, string $end, string $lunchStart): bool
     {
         $total = self::grossMinutes($start, $end);
         $offset = self::grossMinutes($start, $lunchStart);
 
-        return $offset > 0 && $offset + (int) $team->lunch_min <= $total;
+        return $offset > 0 && $offset + (int) $cfg['lunch_min'] <= $total;
     }
 
     /**
-     * Devuelve [break_min, break_mode, lunch_start] ya resueltos según la regla
-     * del equipo. $in acepta: start_time, end_time, break_mode, break_min, lunch_start.
+     * Devuelve [break_min, break_mode, lunch_start] ya resueltos según $cfg
+     * (config efectiva del equipo + overrides del asesor).
+     * $in acepta: start_time, end_time, break_mode, break_min, lunch_start.
      */
-    public static function resolve(?Team $team, array $in): array
+    public static function resolve(array $cfg, array $in): array
     {
-        $rule = $team->rule ?? 'interval';
-
-        if ($rule === 'lunch') {
+        if (($cfg['rule'] ?? 'interval') === 'lunch') {
             $lunchStart = $in['lunch_start'] ?? null;
 
             return [
-                'break_min' => $lunchStart ? (int) ($team->lunch_min ?? 60) : 0,
+                'break_min' => $lunchStart ? (int) $cfg['lunch_min'] : 0,
                 'break_mode' => 'manual',
                 'lunch_start' => $lunchStart,
             ];
@@ -73,8 +90,8 @@ class ShiftRules
             ? self::autoBreakMinutes(
                 $in['start_time'],
                 $in['end_time'],
-                (int) ($team->break_interval_min ?? 180),
-                (int) ($team->break_len_min ?? 15),
+                (int) $cfg['break_interval_min'],
+                (int) $cfg['break_len_min'],
             )
             : (int) ($in['break_min'] ?? 0);
 

@@ -12,11 +12,15 @@ class Employee extends Model
         'team_id',
         'name',
         'sort_order',
+        'break_len_min',
+        'lunch_min',
     ];
 
     protected $casts = [
         'team_id' => 'integer',
         'sort_order' => 'integer',
+        'break_len_min' => 'integer',
+        'lunch_min' => 'integer',
     ];
 
     public function team(): BelongsTo

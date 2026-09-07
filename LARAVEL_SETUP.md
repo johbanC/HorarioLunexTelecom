@@ -38,6 +38,15 @@ Los parámetros (`break_len_min`, `break_interval_min`, `lunch_min`,
 `break_paid`) son editables por equipo desde el botón **⚙ Equipos**. Ahí también
 se crean equipos nuevos y se ve/regenera el enlace de cada uno.
 
+**Override por asesor**: en el modal **👤 Empleados**, cada empleado tiene un
+campo de minutos (descanso para equipos `interval`, almuerzo para `lunch`). Si se
+deja vacío usa el del equipo; si se pone un número, ese asesor usa ese valor
+(ej. 20 min en vez de los 15 del equipo). Columnas `employees.break_len_min` y
+`employees.lunch_min` (NULL = heredar del equipo). La regla efectiva la resuelve
+`App\Support\ShiftRules::configFor(team, employee)` y aplica al guardar/generar
+turnos y al dibujar la cuadrícula. Los turnos ya guardados mantienen su
+`break_min`; para recalcularlos hay que volver a guardarlos.
+
 Turnos que cruzan medianoche se manejan sumando 24 h. Cada turno lleva
 `cobro` = `anticipado` | `posterior`, resumido en las estadísticas.
 
@@ -68,10 +77,12 @@ Cada equipo tiene un `share_token`. El enlace que se comparte es:
 https://TU-DOMINIO/ver/<share_token>
 ```
 
-Muestra la misma cuadrícula (con navegación de meses y auto-refresco cada 20 s)
-pero **sin poder editar** nada y solo con los empleados de ese equipo. La página
-lleva `noindex`. Si el enlace se filtra, se regenera desde ⚙ Equipos y el
-anterior deja de funcionar.
+Muestra la misma cuadrícula (con navegación de meses, filtros de días/asesor y
+auto-refresco cada 20 s) pero **sin poder editar** nada y solo con los empleados
+de ese equipo. **No muestra el cobro** (anticipado/posterior) — ni las tarjetas
+de resumen ni en el borde de las filas, que en solo lectura llevan el color del
+asesor. La página lleva `noindex`. Si el enlace se filtra, se regenera desde
+⚙ Equipos y el anterior deja de funcionar.
 
 ## Plantilla semanal y generar el mes
 

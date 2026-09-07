@@ -308,3 +308,10 @@
 #empFilter button:hover{ background:var(--surface-2); }
 #empFilter button.on{ background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
 #empFilter .dot{ width:8px; height:8px; border-radius:50%; flex:none; }
+
+/* ---- override de descanso por asesor (modal Empleados) ---- */
+.emp-list-row .ov-wrap{ font-size:10.5px; color:var(--muted); white-space:nowrap; display:inline-flex; align-items:center; gap:3px; }
+.emp-list-row input.ov{
+  width:52px; border:1px solid var(--border); border-radius:6px; padding:4px 6px;
+  background:var(--surface); color:var(--ink); font-size:12px; font-family:'IBM Plex Mono',monospace;
+}

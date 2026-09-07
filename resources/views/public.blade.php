@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/horario.css?v=6">
+<link rel="stylesheet" href="/assets/horario.css?v=7">
 </head>
 <body>
 
@@ -47,7 +47,7 @@
     <table class="sched" id="schedTable"></table>
   </div>
 
-  <footer class="note">El color identifica al empleado · el borde izquierdo marca el cobro · las celdas con rayado son el descanso / almuerzo · se actualiza solo cada 20s</footer>
+  <footer class="note">El color identifica a cada asesor · las celdas con rayado son el descanso / almuerzo · se actualiza solo cada 20s</footer>
 </div>
 
 <div id="modalRoot"></div>
@@ -60,6 +60,6 @@
     team: @json($team)
   };
 </script>
-<script src="/assets/horario.js?v=6"></script>
+<script src="/assets/horario.js?v=7"></script>
 </body>
 </html>

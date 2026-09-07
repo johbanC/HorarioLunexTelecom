@@ -85,15 +85,23 @@
   function breakEvery() { return +team().break_interval_min || 180; }
   function lunchLen() { return +team().lunch_min || 60; }
 
+  // Config de descanso efectiva para un asesor: sus overrides (break_len_min /
+  // lunch_min) o, si no tiene, los del equipo.
+  function empCfg(empId) {
+    var e = empId ? state.employees.find(function (x) { return x.id === String(empId); }) : null;
+    return {
+      len: (e && +e.break_len_min) || breakLen(),
+      every: breakEvery(),
+      lunch: (e && +e.lunch_min) || lunchLen()
+    };
+  }
+
   // regla 'interval' (CSR): un descanso corto solo si, al completar el bloque,
   // todavía queda turno después (nunca justo al salir).
-  function breakCountFor(total) {
-    var every = breakEvery(), len = breakLen(), c = 0, k = 1;
-    while (k * every + len <= total) { c++; k++; }
-    return c;
-  }
-  function autoBreakMinutes(start, end) {
-    return breakCountFor(grossMinutes(start, end)) * breakLen();
+  function autoBreakMinutes(start, end, empId) {
+    var c = empCfg(empId), total = grossMinutes(start, end), count = 0, k = 1;
+    while (k * c.every + c.len <= total) { count++; k++; }
+    return count * c.len;
   }
 
   // Posición de los descansos dentro del turno (offset en minutos desde el inicio).
@@ -101,18 +109,19 @@
     var startAbs = timeToMin(s.start);
     var total = grossMinutes(s.start, s.end);
     if (total <= 0) return [];
+    var c = empCfg(s.empId);
 
     if (isLunch()) {
       if (!s.lunchStart) return [];
       var lu = timeToMin(s.lunchStart);
       var off = lu - startAbs;
       if (off < 0) off += 1440;
-      var len = lunchLen();
+      var len = c.lunch;
       if (off <= 0 || off + len > total) return [];
       return [{ startOffset: off, endOffset: off + len, start: s.lunchStart, end: minToTime(lu + len) }];
     }
 
-    var every = breakEvery(), blen = breakLen();
+    var every = c.every, blen = c.len;
     var count = Math.round((s.breakMin || 0) / blen);
     var slots = [];
     for (var k = 1; k <= count; k++) {
@@ -236,6 +245,7 @@
       if (!days[d][eid]) days[d][eid] = [];
       days[d][eid].push({
         dbId: r.id,
+        empId: eid,
         start: r.start_time,
         end: r.end_time,
         breakMin: +r.break_min,
@@ -249,7 +259,13 @@
 
   function mapEmployees(data) {
     return data
-      .map(function (e) { return { id: String(e.id), name: e.name, order: e.sort_order }; })
+      .map(function (e) {
+        return {
+          id: String(e.id), name: e.name, order: e.sort_order,
+          break_len_min: e.break_len_min || null,
+          lunch_min: e.lunch_min || null
+        };
+      })
       .sort(function (a, b) { return (a.order - b.order) || a.name.localeCompare(b.name); });
   }
 
@@ -505,8 +521,10 @@
     state.employees.forEach(function (e) {
       html += statTile(e.name, fmtH(t.perEmp[e.id] || 0) + "h", false);
     });
-    html += statTile("Cobro anticipado", fmtH(t.anticipado) + "h", false, "var(--accent)");
-    html += statTile("Cobro posterior", fmtH(t.posterior) + "h", false, "var(--warn)");
+    if (EDITABLE) {
+      html += statTile("Cobro anticipado", fmtH(t.anticipado) + "h", false, "var(--accent)");
+      html += statTile("Cobro posterior", fmtH(t.posterior) + "h", false, "var(--warn)");
+    }
     el.innerHTML = html;
   }
 
@@ -562,7 +580,10 @@
 
       rows.forEach(function (r, i) {
         var col = employeeColor(empIndex(r.emp.id));
-        var cobroColor = r.shift.cobro === "posterior" ? "var(--warn)" : "var(--accent)";
+        // En solo lectura el borde sigue el color del asesor (el cobro no se muestra a los usuarios).
+        var cobroColor = EDITABLE
+          ? (r.shift.cobro === "posterior" ? "var(--warn)" : "var(--accent)")
+          : col.bg;
         body += '<tr class="' + rowClass + '">';
         if (i === 0) body += dateCell;
         body += '<td class="emp-col"' + editAttr + ' data-date="' + dk + '" data-emp="' + r.emp.id + '" data-idx="' + r.idx + '" style="border-left:4px solid ' + cobroColor + ';">' +
@@ -636,10 +657,10 @@
   }
 
   // ---------------- editor de turno ----------------
-  function defaultLunchStart(s) {
+  function defaultLunchStart(s, empId) {
     var startAbs = timeToMin(s.start);
     var total = grossMinutes(s.start, s.end);
-    var off = Math.max(0, Math.round((total - lunchLen()) / 2));
+    var off = Math.max(0, Math.round((total - empCfg(empId).lunch) / 2));
     return minToTime(startAbs + off);
   }
 
@@ -665,17 +686,18 @@
     }
     if (!s.breakMode) s.breakMode = "auto";
 
-    if (isLunch()) {
-      s.breakMode = "manual";
-      if (!s.lunchStart) s.lunchStart = defaultLunchStart(s);
-      s.breakMin = lunchLen();
-    } else if (s.breakMode === "auto") {
-      s.breakMin = autoBreakMinutes(s.start, s.end);
-    }
-
     var takenIds = Object.keys((state.monthData.days[dateK] || {})).filter(function (id) { return (state.monthData.days[dateK][id] || []).length; });
     var defaultEmp = empId || (state.employees.find(function (e) { return takenIds.indexOf(e.id) === -1; }) || state.employees[0]).id;
-    var selectedEmp = defaultEmp;
+    var selectedEmp = String(defaultEmp);
+    s.empId = selectedEmp;
+
+    if (isLunch()) {
+      s.breakMode = "manual";
+      if (!s.lunchStart) s.lunchStart = defaultLunchStart(s, selectedEmp);
+      s.breakMin = empCfg(selectedEmp).lunch;
+    } else if (s.breakMode === "auto") {
+      s.breakMin = autoBreakMinutes(s.start, s.end, selectedEmp);
+    }
 
     var y = +dateK.slice(0, 4), m = +dateK.slice(5, 7), d = +dateK.slice(8, 10);
     var wd = new Date(y, m - 1, d).getDay();
@@ -684,19 +706,23 @@
     var root = document.getElementById("modalRoot");
 
     function breakBlock() {
+      var c = empCfg(selectedEmp);
+      var override = c.len !== breakLen() || c.lunch !== lunchLen();
+      var ovNote = override ? ' <span style="color:var(--accent);">(ajuste propio de ' + escapeHtml((state.employees.find(function (e) { return e.id === String(selectedEmp); }) || {}).name || "") + ')</span>' : '';
       if (isLunch()) {
         return '<div class="field-row">' +
           '<div class="field"><label>Inicio almuerzo</label><input type="time" id="fLunch" value="' + esc(s.lunchStart) + '"></div>' +
           '<div class="field"><label>Horas pagadas</label><input type="text" class="mono" value="' + fmtH(paidHours(s)) + 'h" disabled></div>' +
           '</div>' +
-          '<div class="hint">Almuerzo de ' + lunchLen() + ' min · se descuenta del pago</div>';
+          '<div class="hint">Almuerzo de ' + c.lunch + ' min · se descuenta del pago' + ovNote + '</div>';
       }
       return '<div class="field-row">' +
         '<div class="field"><label>Descanso (min)' + (s.breakMode === "auto" ? ' · auto' : '') + '</label><input type="number" min="0" step="5" id="fBreak" value="' + (s.breakMin || 0) + '"' + (s.breakMode === "auto" ? ' disabled' : '') + '></div>' +
         '<div class="field"><label>Horas pagadas</label><input type="text" class="mono" value="' + fmtH(paidHours(s)) + 'h" disabled></div>' +
         '</div>' +
+        (override ? '<div class="hint">' + c.len + ' min cada ' + fmtH(c.every / 60) + 'h' + ovNote + '</div>' : '') +
         '<button type="button" class="btn ghost small" style="padding:4px 0 0;" id="toggleBreak">' +
-        (s.breakMode === "auto" ? "Ajustar descanso manualmente" : "Usar regla automática (" + breakLen() + " min cada " + fmtH(breakEvery() / 60) + "h)") + '</button>';
+        (s.breakMode === "auto" ? "Ajustar descanso manualmente" : "Usar regla automática (" + c.len + " min cada " + fmtH(c.every / 60) + "h)") + '</button>';
     }
     function brkLabelHtml() {
       var slots = breakSlots(s);
@@ -773,17 +799,23 @@
         '</div></div>';
       root.innerHTML = html;
 
-      document.getElementById("empSelect").addEventListener("change", function () { selectedEmp = this.value; });
+      document.getElementById("empSelect").addEventListener("change", function () {
+        selectedEmp = this.value;
+        s.empId = selectedEmp;
+        if (isLunch()) { s.breakMin = empCfg(selectedEmp).lunch; }
+        else if (s.breakMode !== "manual") s.breakMin = autoBreakMinutes(s.start, s.end, selectedEmp);
+        draw();
+      });
       document.getElementById("fStart").addEventListener("input", function () {
         s.start = this.value;
-        if (isLunch()) { s.lunchStart = defaultLunchStart(s); s.breakMin = lunchLen(); }
-        else if (s.breakMode !== "manual") s.breakMin = autoBreakMinutes(s.start, s.end);
+        if (isLunch()) { s.lunchStart = defaultLunchStart(s, selectedEmp); s.breakMin = empCfg(selectedEmp).lunch; }
+        else if (s.breakMode !== "manual") s.breakMin = autoBreakMinutes(s.start, s.end, selectedEmp);
         draw();
       });
       document.getElementById("fEnd").addEventListener("input", function () {
         s.end = this.value;
-        if (isLunch()) { s.breakMin = lunchLen(); }
-        else if (s.breakMode !== "manual") s.breakMin = autoBreakMinutes(s.start, s.end);
+        if (isLunch()) { s.breakMin = empCfg(selectedEmp).lunch; }
+        else if (s.breakMode !== "manual") s.breakMin = autoBreakMinutes(s.start, s.end, selectedEmp);
         draw();
       });
       var fLunch = document.getElementById("fLunch");
@@ -793,7 +825,7 @@
       var tgl = document.getElementById("toggleBreak");
       if (tgl) tgl.addEventListener("click", function () {
         if (s.breakMode === "auto") { s.breakMode = "manual"; }
-        else { s.breakMode = "auto"; s.breakMin = autoBreakMinutes(s.start, s.end); }
+        else { s.breakMode = "auto"; s.breakMin = autoBreakMinutes(s.start, s.end, selectedEmp); }
         draw();
       });
       root.querySelectorAll("[data-cobro]").forEach(function (btn) {
@@ -887,14 +919,27 @@
         '</div></div>';
       root.innerHTML = html;
 
+      var lunchTeam = isLunch();
+      var ovField = lunchTeam ? "lunch_min" : "break_len_min";
+      var ovLabel = lunchTeam ? "Almuerzo" : "Descanso";
+      var teamDefault = lunchTeam ? lunchLen() : breakLen();
+
       var rows = document.getElementById("empRows");
       rows.innerHTML = state.employees.map(function (e) {
+        var ov = lunchTeam ? e.lunch_min : e.break_len_min;
         return '<div class="emp-list-row"><input class="rename" data-id="' + e.id + '" type="text" value="' + escapeHtml(e.name) + '">' +
+          '<span class="ov-wrap" title="' + ovLabel + ' propio en minutos · vacío = usar el del equipo (' + teamDefault + ')">' +
+          '<input class="ov" data-id="' + e.id + '" type="number" min="0" step="5" placeholder="' + teamDefault + '" value="' + (ov || "") + '"> min</span>' +
           '<button class="btn small danger" data-del="' + e.id + '">Eliminar</button></div>';
       }).join("") || '<div class="modal-sub">Sin empleados todavía.</div>';
 
       rows.querySelectorAll("input.rename").forEach(function (inp) {
         inp.addEventListener("change", function () { renameEmployee(inp.getAttribute("data-id"), inp.value.trim()); });
+      });
+      rows.querySelectorAll("input.ov").forEach(function (inp) {
+        inp.addEventListener("change", function () {
+          setEmpOverride(inp.getAttribute("data-id"), ovField, inp.value === "" ? 0 : (+inp.value || 0)).then(draw);
+        });
       });
       rows.querySelectorAll("[data-del]").forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -929,6 +974,17 @@
       await apiSend("employees", "PUT", { id: +id, name: name });
       await loadEmployees();
     } catch (e) { console.error(e); alert("No se pudo renombrar: " + e.message); }
+  }
+  async function setEmpOverride(id, field, value) {
+    var emp = state.employees.find(function (e) { return e.id === String(id); });
+    if (!emp) return;
+    var payload = { id: +id, name: emp.name };
+    payload[field] = value;
+    try {
+      await apiSend("employees", "PUT", payload);
+      await loadEmployees();
+      await loadMonth(state.monthKey);
+    } catch (e) { console.error(e); alert("No se pudo guardar el ajuste: " + e.message); }
   }
   async function removeEmployee(id) {
     try {

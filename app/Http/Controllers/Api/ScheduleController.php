@@ -125,8 +125,10 @@ class ScheduleController extends Controller
      */
     private function makeShift(Employee $employee, ?Team $team, string $date, array $in): array
     {
-        if ($team && $team->rule === 'lunch' && ! empty($in['lunch_start'])
-            && ! ShiftRules::lunchFits($team, $in['start_time'], $in['end_time'], $in['lunch_start'])) {
+        $cfg = ShiftRules::configFor($team, $employee);
+
+        if ($cfg['rule'] === 'lunch' && ! empty($in['lunch_start'])
+            && ! ShiftRules::lunchFits($cfg, $in['start_time'], $in['end_time'], $in['lunch_start'])) {
             return [false, 'lunch'];
         }
 
@@ -142,7 +144,7 @@ class ScheduleController extends Controller
             return [false, 'duplicate'];
         }
 
-        $resolved = ShiftRules::resolve($team, $in);
+        $resolved = ShiftRules::resolve($cfg, $in);
 
         Shift::create([
             'employee_id' => $employee->id,

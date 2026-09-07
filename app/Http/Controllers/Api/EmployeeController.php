@@ -10,14 +10,14 @@ use Illuminate\Http\Request;
 
 class EmployeeController extends Controller
 {
-    /** GET /api/employees[?team=ID] → [{id, team_id, name, sort_order}, ...] */
+    /** GET /api/employees[?team=ID] → [{id, team_id, name, sort_order, break_len_min, lunch_min}, ...] */
     public function index(Request $request): JsonResponse
     {
         $employees = Employee::query()
             ->when($request->filled('team'), fn ($q) => $q->where('team_id', (int) $request->query('team')))
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->get(['id', 'team_id', 'name', 'sort_order']);
+            ->get(['id', 'team_id', 'name', 'sort_order', 'break_len_min', 'lunch_min']);
 
         return response()->json($employees);
     }
@@ -28,6 +28,8 @@ class EmployeeController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'team_id' => ['required', 'integer', 'exists:teams,id'],
+            'break_len_min' => ['nullable', 'integer', 'min:0', 'max:240'],
+            'lunch_min' => ['nullable', 'integer', 'min:0', 'max:240'],
         ]);
 
         $name = trim($data['name']);
@@ -42,6 +44,8 @@ class EmployeeController extends Controller
             'name' => $name,
             'team_id' => $data['team_id'],
             'sort_order' => $nextOrder,
+            'break_len_min' => ($data['break_len_min'] ?? null) ?: null,
+            'lunch_min' => ($data['lunch_min'] ?? null) ?: null,
         ]);
 
         return response()->json([
@@ -49,6 +53,8 @@ class EmployeeController extends Controller
             'team_id' => $employee->team_id,
             'name' => $employee->name,
             'sort_order' => $employee->sort_order,
+            'break_len_min' => $employee->break_len_min,
+            'lunch_min' => $employee->lunch_min,
         ]);
     }
 
@@ -59,6 +65,8 @@ class EmployeeController extends Controller
             'id' => ['required', 'integer'],
             'name' => ['required', 'string', 'max:100'],
             'team_id' => ['nullable', 'integer', 'exists:teams,id'],
+            'break_len_min' => ['nullable', 'integer', 'min:0', 'max:240'],
+            'lunch_min' => ['nullable', 'integer', 'min:0', 'max:240'],
         ]);
 
         $name = trim($data['name']);
@@ -75,6 +83,13 @@ class EmployeeController extends Controller
         if (! empty($data['team_id']) && $data['team_id'] !== $employee->team_id) {
             $employee->team_id = $data['team_id'];
             $employee->sort_order = (int) (Employee::where('team_id', $data['team_id'])->max('sort_order') ?? -1) + 1;
+        }
+        // Solo se tocan los overrides si vienen en la petición (0/"" = quitar override).
+        if ($request->has('break_len_min')) {
+            $employee->break_len_min = ($data['break_len_min'] ?? null) ?: null;
+        }
+        if ($request->has('lunch_min')) {
+            $employee->lunch_min = ($data['lunch_min'] ?? null) ?: null;
         }
         $employee->save();
 
