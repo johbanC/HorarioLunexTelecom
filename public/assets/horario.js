@@ -1223,12 +1223,93 @@
     });
   }
 
+  // ---------------- exportar a CSV (formato de reporte por hora) ----------------
+  var EN_DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  function csvCell(v) {
+    v = v == null ? "" : String(v);
+    return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+  function exportCsv() {
+    var days = state.monthData.days || {};
+    var nDays = daysInMonth(state.monthKey);
+    var y = +state.monthKey.slice(0, 4), m = +state.monthKey.slice(5, 7);
+    var minH = 24, maxH = 0;
+    var perDay = [];
+
+    for (var day = 1; day <= nDays; day++) {
+      var dk = dateStr(state.monthKey, day);
+      var wd = weekdayOf(state.monthKey, day);
+      if (state.dayFilter.indexOf(wd) === -1) continue;
+      var shifts = [];
+      state.employees.forEach(function (e) {
+        if (state.empFilter.length && state.empFilter.indexOf(e.id) === -1) return;
+        ((days[dk] && days[dk][e.id]) || []).forEach(function (s) {
+          var a = timeToMin(s.start), b = a + grossMinutes(s.start, s.end);
+          shifts.push({ name: e.name, startMin: a, endMin: b });
+          if (Math.floor(a / 60) < minH) minH = Math.floor(a / 60);
+          if (Math.ceil(b / 60) > maxH) maxH = Math.ceil(b / 60);
+        });
+      });
+      shifts.sort(function (x, z) { return x.startMin - z.startMin; });
+      perDay.push({ day: day, wd: wd, shifts: shifts });
+    }
+
+    if (maxH <= minH) { alert("No hay turnos para exportar en la vista actual."); return; }
+    maxH = Math.min(maxH, 24);
+
+    var header = ["Date", "Day of Week"];
+    for (var h = minH; h < maxH; h++) header.push(h + ":00");
+    var lines = [header.map(csvCell).join(",")];
+
+    perDay.forEach(function (pd) {
+      var dstr = m + "/" + pd.day + "/" + y;
+      if (!pd.shifts.length) {
+        var empty = [dstr, EN_DOW[pd.wd]];
+        for (var h = minH; h < maxH; h++) empty.push("");
+        lines.push(empty.map(csvCell).join(","));
+        return;
+      }
+      // Empaqueta turnos que no se solapan en la misma fila (como en el reporte).
+      var tracks = [];
+      pd.shifts.forEach(function (s) {
+        var tr = null;
+        for (var i = 0; i < tracks.length; i++) { if (tracks[i].endMin <= s.startMin) { tr = tracks[i]; break; } }
+        if (!tr) { tr = { endMin: 0, segs: [] }; tracks.push(tr); }
+        tr.segs.push(s);
+        tr.endMin = Math.max(tr.endMin, s.endMin);
+      });
+      tracks.forEach(function (tr) {
+        var row = [dstr, EN_DOW[pd.wd]];
+        for (var h = minH; h < maxH; h++) {
+          var hm = h * 60, name = "";
+          for (var i = 0; i < tr.segs.length; i++) {
+            if (tr.segs[i].startMin <= hm && hm < tr.segs[i].endMin) { name = tr.segs[i].name; break; }
+          }
+          row.push(name);
+        }
+        lines.push(row.map(csvCell).join(","));
+      });
+    });
+
+    var csv = "﻿" + lines.join("\r\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "horario_" + String(team().name || "equipo").replace(/[^\w-]+/g, "_") + "_" + state.monthKey + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  }
+
   // ---------------- navegación ----------------
   function bind(id, ev, fn) { var el = document.getElementById(id); if (el) el.addEventListener(ev, fn); }
   bind("prevMonth", "click", function () { shiftMonth(-1); });
   bind("nextMonth", "click", function () { shiftMonth(1); });
   bind("manageEmployeesBtn", "click", openEmployeeEditor);
   bind("manageTemplatesBtn", "click", openTemplateEditor);
+  bind("exportBtn", "click", exportCsv);
   bind("refreshBtn", "click", refreshQuiet);
 
   function shiftMonth(delta) {

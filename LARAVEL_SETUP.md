@@ -62,6 +62,14 @@ oculta/muestra filas y el «Total (filtrado)» del pie se recalcula. Se reinicia
 al cambiar de equipo (no se guarda entre sesiones). Con un solo asesor
 seleccionado, «+ agregar turno» ya lo pre-selecciona.
 
+**Exportar** (botón ⬇ en la barra, también en la vista de solo lectura): descarga
+un CSV con el formato de reporte por hora — columnas `Date` (M/D/YYYY),
+`Day of Week` (en inglés) y una columna por hora (rango tomado de los turnos).
+Cada fila lleva, en cada hora, el nombre de quien cubre esa hora; los turnos que
+no se solapan se empaquetan en la misma fila (turno de mañana + turno de tarde
+juntos). Respeta los filtros de día y de asesor. Se genera en el navegador
+(Blob + `<a download>`), lleva BOM para que Excel lea bien los acentos.
+
 **Varios turnos por persona el mismo día** (cuando alguien cubre horas): en
 la cuadrícula, cada empleado tiene un botón **＋ turno** que abre un turno nuevo
 para esa persona ese día, con la entrada ya puesta al final de su último turno.
